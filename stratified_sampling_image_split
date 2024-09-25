@@ -1,0 +1,82 @@
+import os
+import random
+import shutil
+
+# Define paths to the folders
+folders = {
+    "50_sign": r"C:\Users\chadg\OneDrive\Desktop\SEM 7\Machine Learning and Perception\Project\Photo frames\50_video_frames",
+    "70_sign": r"C:\Users\chadg\OneDrive\Desktop\SEM 7\Machine Learning and Perception\Project\Photo frames\70_video_frames",
+    "120_sign": r"C:\Users\chadg\OneDrive\Desktop\SEM 7\Machine Learning and Perception\Project\Photo frames\120_video_frames"
+}
+
+# Destination folders for training, testing, and validation sets
+output_dirs = {
+    "training_set": r"C:\Users\chadg\OneDrive\Desktop\SEM 7\Machine Learning and Perception\Project\Photo frames\training_set",
+    "testing_set": r"C:\Users\chadg\OneDrive\Desktop\SEM 7\Machine Learning and Perception\Project\Photo frames\testing_set",
+    "validation_set": r"C:\Users\chadg\OneDrive\Desktop\SEM 7\Machine Learning and Perception\Project\Photo frames\validation_set"
+}
+
+# Ensure output directories exist (training, testing, validation)
+for folder in output_dirs.values():
+    os.makedirs(folder, exist_ok=True)
+
+# Initialize counters for renaming the frames
+counters = {
+    "training_set": 1,
+    "testing_set": 1,
+    "validation_set": 1
+}
+
+def stratified_split(folder_path, training_percentage=0.6, testing_percentage=0.2):
+    """
+    Splits images in the folder into training, testing, and validation based on the provided percentages.
+    """
+    # List all image files in the directory
+    all_images = os.listdir(folder_path)
+    all_images = [img for img in all_images if img.lower().endswith(('.png', '.jpg', '.jpeg'))]  # Filter image files
+
+    # Shuffle images to ensure random distribution
+    random.shuffle(all_images)
+
+    # Calculate split sizes
+    total_images = len(all_images)
+    training_count = int(training_percentage * total_images)
+    testing_count = int(testing_percentage * total_images)
+
+    # Split the images into three sets
+    training_images = all_images[:training_count]
+    testing_images = all_images[training_count:training_count + testing_count]
+    validation_images = all_images[training_count + testing_count:]
+
+    return training_images, testing_images, validation_images
+
+def move_and_rename_images(image_list, source_folder, destination_folder, prefix, counter):
+    """
+    Moves and renames images from the source folder to the destination folder.
+    The images are renamed as prefix_frame_XXXX, where XXXX is the counter.
+    """
+    for image in image_list:
+        source_path = os.path.join(source_folder, image)
+        new_name = f"{prefix}_frame_{counter:04d}{os.path.splitext(image)[1]}"  # Maintain the file extension
+        destination_path = os.path.join(destination_folder, new_name)
+        shutil.copy(source_path, destination_path)  # Copy the image to the new location
+        counter += 1
+    return counter
+
+# Iterate over each sign folder and move images to the mixed training, testing, and validation folders
+for sign_type, folder_path in folders.items():
+    print(f"Processing {sign_type}...")
+
+    # Perform the stratified split for each folder
+    training_images, testing_images, validation_images = stratified_split(folder_path)
+
+    # Move and rename training images
+    counters["training_set"] = move_and_rename_images(training_images, folder_path, output_dirs["training_set"], "train", counters["training_set"])
+
+    # Move and rename testing images
+    counters["testing_set"] = move_and_rename_images(testing_images, folder_path, output_dirs["testing_set"], "test", counters["testing_set"])
+
+    # Move and rename validation images
+    counters["validation_set"] = move_and_rename_images(validation_images, folder_path, output_dirs["validation_set"], "vali", counters["validation_set"])
+
+print("Stratified sampling, image movement, and renaming completed!")
