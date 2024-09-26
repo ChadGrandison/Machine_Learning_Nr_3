@@ -1,0 +1,59 @@
+import cv2
+import numpy as np
+import matplotlib.pyplot as plt
+import os
+import random
+
+# Step 0: Define the path to the image directory
+image_path = r"C:\Users\chadg\OneDrive\Desktop\SEM 7\Machine Learning and Perception\Project\Photo frames\50_video_frames"
+# List all files in the directory
+image_files = os.listdir(image_path)
+
+# Randomly select 1 file (instead of 10)
+random_file = random.sample(image_files, 1)[0]
+
+
+# Function to display images
+def display_image(img, title, cmap_type=None):
+    if cmap_type:
+        plt.imshow(img, cmap=cmap_type)  # Grayscale
+    else:
+        plt.imshow(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))  # Color (Original)
+    plt.title(title)
+    plt.axis('off')
+    plt.show()
+
+
+# Resize image to fit a window while keeping the aspect ratio
+def resize_to_window(img, window_size):
+    h, w = img.shape[:2]
+    aspect_ratio = w / h
+    if w > h:
+        new_w = window_size
+        new_h = int(new_w / aspect_ratio)
+    else:
+        new_h = window_size
+        new_w = int(new_h * aspect_ratio)
+    return cv2.resize(img, (new_w, new_h), interpolation=cv2.INTER_AREA)
+
+
+# Process the one random image
+image_path_full = os.path.join(image_path, random_file)
+
+# Step 1: Load the original image
+image = cv2.imread(image_path_full)
+display_image(image, f"Original Image - {random_file}")  # Display the original image
+
+# Step 2: Convert the image to grayscale
+gray_image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+display_image(gray_image, f"Grayscale Image - {random_file}", cmap_type='gray')  # Display the grayscale image
+
+# Step 3: Apply a blur to the grayscale image to reduce noise
+blurred_image = cv2.GaussianBlur(gray_image, (5, 5), 0)
+display_image(blurred_image, f"Blurred Image - {random_file}", cmap_type='gray')  # Display the blurred image
+
+# Step 4: Resize the blurred image to fit within a window
+resized_image = resize_to_window(blurred_image, 500)
+display_image(resized_image, f"Resized Image - {random_file}", cmap_type='gray')  # Display the resized image
+
+print("Processing completed for 1 frame!")
