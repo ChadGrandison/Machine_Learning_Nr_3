@@ -1,0 +1,158 @@
+import cv2
+import numpy as np
+import matplotlib.pyplot as plt
+import os
+import random
+import time
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import classification_report, accuracy_score
+
+# Start the timer
+start_time = time.time()
+
+# Paths to the training, testing, and validation sets
+train_dir = r"C:\Users\chadg\OneDrive\Desktop\SEM 7\Machine Learning and Perception\Project\Photo frames\a_training_set"
+test_dir = r"C:\Users\chadg\OneDrive\Desktop\SEM 7\Machine Learning and Perception\Project\Photo frames\b_testing_set"
+val_dir = r"C:\Users\chadg\OneDrive\Desktop\SEM 7\Machine Learning and Perception\Project\Photo frames\c_validation_set"
+
+# To store the extracted features and labels
+X_train, y_train = [], []
+X_test, y_test = [], []
+X_val, y_val = [], []
+
+
+# Function to extract the perimeter ratio and area ratio as features
+def calculate_features(image_file, label, X, y):
+    # Load the image
+    image = cv2.imread(image_file)
+
+    # Resize the image
+    resized_image = cv2.resize(image, (500, 500), interpolation=cv2.INTER_AREA)
+
+    # Convert the image to grayscale for contour detection
+    gray_image = cv2.cvtColor(resized_image, cv2.COLOR_BGR2GRAY)
+
+    # Apply Canny edge detection to detect edges
+    edges = cv2.Canny(gray_image, 100, 200)
+
+    # Find contours and the hierarchy of contours
+    contours, _ = cv2.findContours(edges, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+
+    outer_contour = None
+    number_contours = []
+
+    # Analyze the contours to find the outer contour and number contours
+    for contour in contours:
+        perimeter = cv2.arcLength(contour, True)
+        area = cv2.contourArea(contour)
+
+        # Assuming outer contour has a larger perimeter and area
+        if perimeter > 100 and area > 1000:
+            outer_contour = contour
+        elif 50 < perimeter < 100:
+            number_contours.append(contour)
+
+    # Get the perimeter and area for the outer contour
+    outer_perimeter = cv2.arcLength(outer_contour, True) if outer_contour is not None else 0
+    outer_area = cv2.contourArea(outer_contour) if outer_contour is not None else 0
+
+    # Calculate the total number of dark pixels (area of number contours)
+    total_dark_pixels = sum(cv2.contourArea(cnt) for cnt in number_contours)
+    total_number_perimeter = sum(cv2.arcLength(cnt, True) for cnt in number_contours)
+
+    # Calculate the perimeter and area ratios
+    perimeter_ratio = outer_perimeter / total_number_perimeter if total_number_perimeter > 0 else 0
+    area_ratio = outer_area / total_dark_pixels if total_dark_pixels > 0 else 0
+
+    # Append the two features (perimeter ratio and area ratio) and the corresponding label
+    X.append([perimeter_ratio, area_ratio])
+    y.append(label)
+
+
+# Function to load the data from a directory and extract the features
+def load_data(folder_path, X, y, class_label):
+    for subdir, dirs, files in os.walk(folder_path):
+        for file in files:
+            if file.endswith(('.png', '.jpg', '.jpeg')):
+                image_path = os.path.join(subdir, file)
+                calculate_features(image_path, class_label, X, y)
+
+
+# Load training, validation, and test data from their respective directories
+load_data(os.path.join(train_dir, '50_sign'), X_train, y_train, '50_sign')
+load_data(os.path.join(train_dir, '70_sign'), X_train, y_train, '70_sign')
+load_data(os.path.join(train_dir, '120_sign'), X_train, y_train, '120_sign')
+
+load_data(os.path.join(test_dir, '50_sign'), X_test, y_test, '50_sign')
+load_data(os.path.join(test_dir, '70_sign'), X_test, y_test, '70_sign')
+load_data(os.path.join(test_dir, '120_sign'), X_test, y_test, '120_sign')
+
+load_data(os.path.join(val_dir, '50_sign'), X_val, y_val, '50_sign')
+load_data(os.path.join(val_dir, '70_sign'), X_val, y_val, '70_sign')
+load_data(os.path.join(val_dir, '120_sign'), X_val, y_val, '120_sign')
+
+# Convert lists to numpy arrays for easier indexing and plotting
+X_train = np.array(X_train)
+y_train = np.array(y_train)
+X_val = np.array(X_val)
+y_val = np.array(y_val)
+X_test = np.array(X_test)
+y_test = np.array(y_test)
+
+# Train a Random Forest Classifier using the two features
+clf = RandomForestClassifier(n_estimators=100, random_state=42)
+clf.fit(X_train, y_train)
+
+# Evaluate the model on the validation set
+y_val_pred = clf.predict(X_val)
+
+# Print classification report for validation set
+print("Validation Set Performance:")
+print(classification_report(y_val, y_val_pred))
+
+# Accuracy on the validation set
+val_accuracy = accuracy_score(y_val, y_val_pred)
+print(f"Validation Accuracy: {val_accuracy:.4f}")
+
+# Evaluate the model on the test set
+y_test_pred = clf.predict(X_test)
+
+# Print classification report for test set
+print("Test Set Performance:")
+print(classification_report(y_test, y_test_pred))
+
+# Accuracy on the test set
+test_accuracy = accuracy_score(y_test, y_test_pred)
+print(f"Test Accuracy: {test_accuracy:.4f}")
+
+# Now let's predict on the training set for plotting
+y_train_pred = clf.predict(X_train)
+
+# 1. Plot the perimeter ratio vs. area ratio for the true labels
+plt.figure(figsize=(10, 6))
+for label, color in zip(['50_sign', '70_sign', '120_sign'], ['red', 'blue', 'green']):
+    idx = y_train == label
+    plt.scatter(X_train[idx, 0], X_train[idx, 1], label=label, color=color, alpha=0.6)
+
+plt.title('Perimeter vs. Area Ratios (True Labels)')
+plt.xlabel('Perimeter Ratio')
+plt.ylabel('Area Ratio')
+plt.legend()
+plt.show()
+
+# 2. Plot the perimeter ratio vs. area ratio for the predicted labels
+plt.figure(figsize=(10, 6))
+for label, color in zip(['50_sign', '70_sign', '120_sign'], ['red', 'blue', 'green']):
+    idx = y_train_pred == label
+    plt.scatter(X_train[idx, 0], X_train[idx, 1], label=label, color=color, alpha=0.6)
+
+plt.title('Perimeter vs. Area Ratios (Predicted Labels)')
+plt.xlabel('Perimeter Ratio')
+plt.ylabel('Area Ratio')
+plt.legend()
+plt.show()
+
+# End the timer and calculate the elapsed time
+end_time = time.time()
+elapsed_time = end_time - start_time
+print(f"Total processing time: {elapsed_time:.2f} seconds")
