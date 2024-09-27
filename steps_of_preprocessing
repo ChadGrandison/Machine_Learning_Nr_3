@@ -39,40 +39,43 @@ def resize_to_window(img, window_size):
 
 # Convert image to 3-bit RGB
 def convert_to_3bit_rgb(img):
-    """
-    Convert image to 3-bit RGB.
-    """
     img_3bit = (img // 128) * 255  # Reduce to 3-bit
     return img_3bit
 
 
-# Function to remove the green screen
-def remove_greenscreen(image, lower_green=(35, 40, 40), upper_green=(110, 255, 255)):
+# Edge enhancement function (using Sobel filter)
+def enhance_edges(image):
     """
-    Removes the green screen by making green pixels transparent.
-    input:
-    image: original image with green screen background.
-    lower_green: Lower border for green color range in HSV (values are adjustable)
-    upper_green: Upper border for green color range in HSV (values are adjustable)
-    return:
-    Image with transparent background.
+    Enhances the edges in the image using the Sobel filter to better distinguish foreground from background.
     """
-    # Convert image to HSV color space
+    # Convert to grayscale
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+
+    # Apply Sobel filter to detect edges
+    sobelx = cv2.Sobel(gray, cv2.CV_64F, 1, 0, ksize=3)  # Sobel in x-direction
+    sobely = cv2.Sobel(gray, cv2.CV_64F, 0, 1, ksize=3)  # Sobel in y-direction
+    sobel_combined = cv2.sqrt(sobelx ** 2 + sobely ** 2)
+
+    # Convert the result back to 8-bit and to BGR (for display and further processing)
+    sobel_combined = cv2.convertScaleAbs(sobel_combined)
+    enhanced_image = cv2.merge([sobel_combined, sobel_combined, sobel_combined])  # Convert to 3-channel
+
+    return enhanced_image
+
+
+# Function to remove the green screen more aggressively
+def remove_greenscreen(image, lower_green=(30, 40, 40), upper_green=(90, 255, 255)):
     hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
-
-    # Create a mask for green color
     mask = cv2.inRange(hsv, lower_green, upper_green)
+    mask_inv = cv2.bitwise_not(mask)
+    result = cv2.bitwise_and(image, image, mask=mask_inv)
 
-    # Add alpha channel (transparency) to the image
-    bgr_channels = cv2.split(image)
+    # Add alpha channel to make the green regions fully transparent
+    bgr_channels = cv2.split(result)
     alpha_channel = np.ones(bgr_channels[0].shape, dtype=bgr_channels[0].dtype) * 255  # 100% opacity
+    alpha_channel[mask == 255] = 0  # Transparent where the green screen was
 
-    # Set alpha channel to 0 for green areas (transparent)
-    alpha_channel[mask == 255] = 0
-
-    # Merge the channels back together with alpha
     image_with_alpha = cv2.merge((*bgr_channels, alpha_channel))
-
     return image_with_alpha
 
 
@@ -82,39 +85,46 @@ image = cv2.imread(image_path_full)
 print(f"Step 1: Loaded the original image - {random_file}")
 display_image(image, f"Original Image - {random_file}")  # Display the original image
 
-# Step 1.1: Remove the green screen background after loading the image
-image_no_greenscreen = remove_greenscreen(image)
-print("Step 1.1: Removed the green screen background from the image")
-display_image(image_no_greenscreen, "Image without Green Screen")  # Display the image without the green screen
+# Step 1.1: Enhance edges before removing the green screen
+enhanced_image = enhance_edges(image)
+print("Step 1.1: Enhanced edges in the image")
+display_image(enhanced_image, "Edge-Enhanced Image")
 
+# Step 1.2: Remove the green screen background after enhancing edges
+image_no_greenscreen = remove_greenscreen(enhanced_image)
+print("Step 1.2: Removed the green screen background from the image")
+display_image(image_no_greenscreen, "Image without Green Screen")
 
 # Step 2: Apply a blur to the original image to reduce noise
-blurred_image = cv2.GaussianBlur(image_no_greenscreen, (5, 5), 0)  # Apply Gaussian blur to the image without green screen
+blurred_image = cv2.GaussianBlur(image_no_greenscreen, (5, 5),
+                                 0)  # Apply Gaussian blur to the image without green screen
 print("Step 2: Applied Gaussian blur to the image without green screen")
-display_image(blurred_image, "Blurred Image (RGB)")  # Display the blurred image
-
+display_image(blurred_image, "Blurred Image (RGB)")
 
 # Step 3: Resize the blurred image to fit within a window
-resized_blurred_image = resize_to_window(blurred_image, 300)  # Resize to 300px window size
-print("Step 3: Resized the blurred image to fit within a 300px window")
-display_image(resized_blurred_image, "Resized Blurred Image (RGB)")  # Display resized blurred image
-
+resized_blurred_image = resize_to_window(blurred_image, 300)  # Resize to 500px window size
+print("Step 3: Resized the blurred image to fit within a 500px window")
+display_image(resized_blurred_image, "Resized Blurred Image (RGB)")
 
 # Step 4: Convert to 3-bit RGB
 image_3bit_rgb = convert_to_3bit_rgb(resized_blurred_image)  # Apply 3-bit conversion to the resized blurred image
 print("Step 4: Converted the image to 3-bit RGB")
-display_image(image_3bit_rgb, "3-bit RGB Image")  # Display 3-bit RGB image
-
+display_image(image_3bit_rgb, "3-bit RGB Image")
 
 # Step 5: Convert the image to grayscale
 image_3bit_grayscale = cv2.cvtColor(image_3bit_rgb, cv2.COLOR_BGR2GRAY)  # Convert 3-bit RGB image to grayscale
 print("Step 5: Converted 3-bit RGB image to grayscale")
-display_image(image_3bit_grayscale, "3-bit Grayscale Image", cmap_type="gray")  # Display 3-bit grayscale image
-
+display_image(image_3bit_grayscale, "3-bit Grayscale Image", cmap_type="gray")
 
 # Step 6: Edge detection
 edges = cv2.Canny(image_3bit_grayscale, 100, 200)  # Perform edge detection
 print("Step 6: Performed edge detection on the 3-bit grayscale image")
-display_image(edges, "Edge Detected Image", cmap_type="gray")  # Display the edges
+display_image(edges, "Edge Detected Image", cmap_type="gray")
 
-
+# Check if the image has an alpha channel and inspect the transparency
+if image_no_greenscreen.shape[2] == 4:  # Check if there are 4 channels (i.e., RGBA)
+    alpha_channel = image_no_greenscreen[:, :, 3]  # The 4th channel is the alpha channel
+    display_image(alpha_channel, "Alpha Channel", cmap_type="gray")
+    print("Alpha values at pixel (0, 0):", alpha_channel[0, 0])
+else:
+    print("Image does not have an alpha channel.")
