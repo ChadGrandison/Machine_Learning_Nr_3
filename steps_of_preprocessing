@@ -37,23 +37,84 @@ def resize_to_window(img, window_size):
     return cv2.resize(img, (new_w, new_h), interpolation=cv2.INTER_AREA)
 
 
-# Process the one random image
-image_path_full = os.path.join(image_path, random_file)
+# Convert image to 3-bit RGB
+def convert_to_3bit_rgb(img):
+    """
+    Convert image to 3-bit RGB.
+    """
+    img_3bit = (img // 128) * 255  # Reduce to 3-bit
+    return img_3bit
+
+
+# Function to remove the green screen
+def remove_greenscreen(image, lower_green=(35, 40, 40), upper_green=(110, 255, 255)):
+    """
+    Removes the green screen by making green pixels transparent.
+    input:
+    image: original image with green screen background.
+    lower_green: Lower border for green color range in HSV (values are adjustable)
+    upper_green: Upper border for green color range in HSV (values are adjustable)
+    return:
+    Image with transparent background.
+    """
+    # Convert image to HSV color space
+    hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
+
+    # Create a mask for green color
+    mask = cv2.inRange(hsv, lower_green, upper_green)
+
+    # Add alpha channel (transparency) to the image
+    bgr_channels = cv2.split(image)
+    alpha_channel = np.ones(bgr_channels[0].shape, dtype=bgr_channels[0].dtype) * 255  # 100% opacity
+
+    # Set alpha channel to 0 for green areas (transparent)
+    alpha_channel[mask == 255] = 0
+
+    # Merge the channels back together with alpha
+    image_with_alpha = cv2.merge((*bgr_channels, alpha_channel))
+
+    return image_with_alpha
+
 
 # Step 1: Load the original image
+image_path_full = os.path.join(image_path, random_file)
 image = cv2.imread(image_path_full)
+print(f"Step 1: Loaded the original image - {random_file}")
 display_image(image, f"Original Image - {random_file}")  # Display the original image
 
-# Step 2: Convert the image to grayscale
-gray_image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-display_image(gray_image, f"Grayscale Image - {random_file}", cmap_type='gray')  # Display the grayscale image
+# Step 1.1: Remove the green screen background after loading the image
+image_no_greenscreen = remove_greenscreen(image)
+print("Step 1.1: Removed the green screen background from the image")
+display_image(image_no_greenscreen, "Image without Green Screen")  # Display the image without the green screen
 
-# Step 3: Apply a blur to the grayscale image to reduce noise
-blurred_image = cv2.GaussianBlur(gray_image, (5, 5), 0)
-display_image(blurred_image, f"Blurred Image - {random_file}", cmap_type='gray')  # Display the blurred image
 
-# Step 4: Resize the blurred image to fit within a window
-resized_image = resize_to_window(blurred_image, 500)
-display_image(resized_image, f"Resized Image - {random_file}", cmap_type='gray')  # Display the resized image
+# Step 2: Apply a blur to the original image to reduce noise
+blurred_image = cv2.GaussianBlur(image_no_greenscreen, (5, 5), 0)  # Apply Gaussian blur to the image without green screen
+print("Step 2: Applied Gaussian blur to the image without green screen")
+display_image(blurred_image, "Blurred Image (RGB)")  # Display the blurred image
 
-print("Processing completed for 1 frame!")
+
+# Step 3: Resize the blurred image to fit within a window
+resized_blurred_image = resize_to_window(blurred_image, 300)  # Resize to 300px window size
+print("Step 3: Resized the blurred image to fit within a 300px window")
+display_image(resized_blurred_image, "Resized Blurred Image (RGB)")  # Display resized blurred image
+
+
+# Step 4: Convert to 3-bit RGB
+image_3bit_rgb = convert_to_3bit_rgb(resized_blurred_image)  # Apply 3-bit conversion to the resized blurred image
+print("Step 4: Converted the image to 3-bit RGB")
+display_image(image_3bit_rgb, "3-bit RGB Image")  # Display 3-bit RGB image
+
+
+# Step 5: Convert the image to grayscale
+image_3bit_grayscale = cv2.cvtColor(image_3bit_rgb, cv2.COLOR_BGR2GRAY)  # Convert 3-bit RGB image to grayscale
+print("Step 5: Converted 3-bit RGB image to grayscale")
+display_image(image_3bit_grayscale, "3-bit Grayscale Image", cmap_type="gray")  # Display 3-bit grayscale image
+
+
+# Step 6: Edge detection
+edges = cv2.Canny(image_3bit_grayscale, 100, 200)  # Perform edge detection
+print("Step 6: Performed edge detection on the 3-bit grayscale image")
+display_image(edges, "Edge Detected Image", cmap_type="gray")  # Display the edges
+
+
