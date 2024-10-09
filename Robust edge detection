@@ -1,0 +1,87 @@
+import cv2
+import numpy as np
+import os
+
+# Define the directory containing the images
+directory_path = r'C:\Users\chadg\OneDrive\Desktop\SEM 7\Machine Learning and Perception\Project\Photo frames\random signs'
+
+# Print all files in the directory
+print("Files in the directory:")
+for filename in os.listdir(directory_path):
+    print(filename)
+
+# Process each image in the directory
+for image_name in os.listdir(directory_path):
+    image_path = os.path.join(directory_path, image_name)
+
+    # Check if the file is an image (optional)
+    if not image_name.lower().endswith(('.png', '.jpg', '.jpeg')):
+        continue
+
+    print(f"Loading image from: {image_path}")
+
+    # Check if the file exists
+    if not os.path.isfile(image_path):
+        print(f"Error: The file {image_name} does not exist.")
+        continue
+
+    # Load the image
+    image = cv2.imread(image_path)
+
+    # Check if the image was loaded successfully
+    if image is not None:
+        print(f"Image {image_name} loaded successfully!")
+
+        # Step 1: Apply Gaussian Blur to reduce noise
+        blurred_image = cv2.GaussianBlur(image, (5, 5), 0)
+
+        # Step 2: Convert the image to HSV color space
+        hsv = cv2.cvtColor(blurred_image, cv2.COLOR_BGR2HSV)
+
+        # Step 3: Create a mask for red pixels
+        # Define lower and upper bounds for red color in HSV
+        lower_red1 = np.array([0, 100, 100])
+        upper_red1 = np.array([10, 255, 255])
+        lower_red2 = np.array([160, 100, 100])
+        upper_red2 = np.array([180, 255, 255])
+
+        # Create masks for red colors
+        mask1 = cv2.inRange(hsv, lower_red1, upper_red1)
+        mask2 = cv2.inRange(hsv, lower_red2, upper_red2)
+        red_mask = mask1 + mask2
+
+        # Step 4: Find contours in the mask
+        contours, _ = cv2.findContours(red_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+        # Step 5: Check for circularity and draw contour if a valid speed sign is found
+        is_speed_sign = False
+        for contour in contours:
+            # Calculate area and perimeter
+            area = cv2.contourArea(contour)
+            perimeter = cv2.arcLength(contour, True)
+            circularity = (4 * np.pi * area) / (perimeter ** 2) if perimeter > 0 else 0
+
+            # Check if the contour is circular enough (above 75% circularity)
+            if circularity > 0.75:
+                is_speed_sign = True
+                # Step 6: Use Canny edge detection
+                edges = cv2.Canny(red_mask, 100, 200)
+
+                # Find contours in the edges
+                edge_contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+                # Draw the largest contour
+                if edge_contours:
+                    largest_contour = max(edge_contours, key=cv2.contourArea)
+                    cv2.drawContours(image, [largest_contour], -1, (0, 255, 0), 2)  # Draw green contour
+
+        # Step 7: Display the result for each image
+        if is_speed_sign:
+            cv2.imshow(f"Detected Speed Sign: {image_name}", image)
+            cv2.waitKey(0)  # Wait for a key press
+            cv2.destroyAllWindows()
+        else:
+            print(f"{image_name} is not a speed sign.")
+
+    else:
+        print(f"Error loading image {image_name}.")
