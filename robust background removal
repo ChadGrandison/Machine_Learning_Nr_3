@@ -1,0 +1,108 @@
+import cv2
+import numpy as np
+import os
+
+# Define the directory containing the images
+directory_path = r'C:\Users\chadg\OneDrive\Desktop\SEM 7\Machine Learning and Perception\Project\Photo frames\random signs'
+
+# Print all files in the directory
+print("Files in the directory:")
+for filename in os.listdir(directory_path):
+    print(filename)
+
+# Process each image in the directory
+for image_name in os.listdir(directory_path):
+    image_path = os.path.join(directory_path, image_name)
+
+    # Check if the file is an image (optional)
+    if not image_name.lower().endswith(('.png', '.jpg', '.jpeg')):
+        continue
+
+    print(f"Loading image from: {image_path}")
+
+    # Check if the file exists
+    if not os.path.isfile(image_path):
+        print(f"Error: The file {image_name} does not exist.")
+        continue
+
+    # Load the image
+    image = cv2.imread(image_path)
+
+    # Check if the image was loaded successfully
+    if image is not None:
+        print(f"Image {image_name} loaded successfully!")
+
+        # Step 1: Apply Gaussian Blur to reduce noise
+        blurred_image = cv2.GaussianBlur(image, (5, 5), 0)
+
+        # Step 2: Convert the image to HSV color space
+        hsv = cv2.cvtColor(blurred_image, cv2.COLOR_BGR2HSV)
+
+        # Step 3: Create a mask for red pixels
+        # Define lower and upper bounds for red color in HSV
+        lower_red1 = np.array([0, 100, 100])
+        upper_red1 = np.array([10, 255, 255])
+        lower_red2 = np.array([160, 100, 100])
+        upper_red2 = np.array([180, 255, 255])
+
+        # Create masks for red colors
+        mask1 = cv2.inRange(hsv, lower_red1, upper_red1)
+        mask2 = cv2.inRange(hsv, lower_red2, upper_red2)
+        red_mask = mask1 + mask2
+
+        # Step 4: Find contours in the mask
+        contours, _ = cv2.findContours(red_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+        # Step 5: Check for circularity and process the largest contour
+        is_speed_sign = False
+        largest_contour = None
+        for contour in contours:
+            # Calculate area and perimeter
+            area = cv2.contourArea(contour)
+            perimeter = cv2.arcLength(contour, True)
+            circularity = (4 * np.pi * area) / (perimeter ** 2) if perimeter > 0 else 0
+
+            # Check if the contour is circular enough (above 75% circularity)
+            if circularity > 0.75:
+                is_speed_sign = True
+                largest_contour = contour
+
+        # Step 6: Perform edge detection and display it
+        if is_speed_sign and largest_contour is not None:
+            # Step 6.1: Use Canny edge detection on the red_mask
+            edges = cv2.Canny(red_mask, 100, 200)
+
+            # Step 6.2: Display the edge detection result
+            cv2.imshow(f"Edge Detection: {image_name}", edges)
+            cv2.waitKey(0)  # Wait for a key press to continue
+            cv2.destroyAllWindows()
+
+            # Create a mask for the largest contour
+            mask = np.zeros_like(image[:, :, 0])  # Create a single channel mask
+            cv2.drawContours(mask, [largest_contour], -1, 255, thickness=cv2.FILLED)
+
+            # Use the mask to extract the foreground (sign) from the image
+            foreground = cv2.bitwise_and(image, image, mask=mask)
+
+            # Step 7: Create an inverted mask to set the background to white
+            background = np.ones_like(image, dtype=np.uint8) * 255  # Create a white background
+            mask_inv = cv2.bitwise_not(mask)  # Invert the mask
+
+            # Combine the foreground and white background
+            final_result = cv2.bitwise_or(foreground, cv2.bitwise_and(background, background, mask=mask_inv))
+
+            # Step 8: Display the final result with the background removed
+            cv2.imshow(f"Background Removed: {image_name}", final_result)
+            cv2.waitKey(0)  # Wait for a key press
+            cv2.destroyAllWindows()
+
+            # Step 9: Save the result
+            output_path = os.path.join(directory_path, f"processed_{image_name}")
+            cv2.imwrite(output_path, final_result)
+            print(f"Processed image saved as {output_path}")
+
+        else:
+            print(f"{image_name} is not a speed sign.")
+
+    else:
+        print(f"Error loading image {image_name}.")
