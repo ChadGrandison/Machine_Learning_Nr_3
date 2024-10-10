@@ -187,10 +187,6 @@ y_test_pred = classifier.predict(X_test)  # Predictions on the test set
 # Get class names from the target labels
 class_names = np.unique(target)  # Get unique class names
 
-# Confusion Matrix for the test set
-print("Confusion Matrix for Test Set:")
-plot_confusion_matrix(y_test, y_test_pred, class_names)
-
 # Classification Report for Test Set
 print("Classification Report for Test Set:")
 print(classification_report(y_test, y_test_pred, target_names=class_names))
