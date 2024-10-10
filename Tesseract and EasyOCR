@@ -1,0 +1,33 @@
+    import cv2
+    import pytesseract
+    import easyocr
+
+    # Set the path to the Tesseract executable
+    pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
+
+    # Load the image using OpenCV
+    image_path = r'C:\Users\luisb\Desktop\Projekt-ML\Province.png'  # Change this to your image path
+    image = cv2.imread(image_path)
+
+    # Optionally, convert the image to grayscale for better recognition
+    gray_image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+
+    # --- Using Pytesseract ---
+    # Recognize numbers using pytesseract
+    pytesseract_results = pytesseract.image_to_string(gray_image, config='outputbase digits')
+
+    # Print results from pytesseract
+    print("Pytesseract Results:")
+    print(pytesseract_results)
+
+    # --- Using EasyOCR ---
+    # Create an EasyOCR reader instance
+    reader = easyocr.Reader(['en'])  # Specify the language(s) you want to recognize
+
+    # Recognize text using EasyOCR
+    easyocr_results = reader.readtext(gray_image)
+
+    # Print results from EasyOCR
+    print("\nEasyOCR Results:")
+    for (bbox, text, prob) in easyocr_results:
+        print(f"Detected: {text} with confidence {prob:.2f}")
