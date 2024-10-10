@@ -1,0 +1,200 @@
+import cv2
+import numpy as np
+import os
+from sklearn.model_selection import train_test_split, learning_curve
+from sklearn.ensemble import RandomForestClassifier, IsolationForest
+from sklearn.metrics import classification_report, confusion_matrix
+from joblib import dump
+import matplotlib.pyplot as plt
+import seaborn as sns  # For better visualization of the confusion matrix
+from sklearn.metrics import classification_report
+
+# Robust background removal using contours (from the first code)
+def remove_background(image):
+    blurred_image = cv2.GaussianBlur(image, (5, 5), 0)
+    hsv = cv2.cvtColor(blurred_image, cv2.COLOR_BGR2HSV)
+
+    lower_red1 = np.array([0, 100, 100])
+    upper_red1 = np.array([10, 255, 255])
+    lower_red2 = np.array([160, 100, 100])
+    upper_red2 = np.array([180, 255, 255])
+
+    mask1 = cv2.inRange(hsv, lower_red1, upper_red1)
+    mask2 = cv2.inRange(hsv, lower_red2, upper_red2)
+    red_mask = mask1 + mask2
+
+    contours, _ = cv2.findContours(red_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+    largest_contour = None
+    for contour in contours:
+        area = cv2.contourArea(contour)
+        perimeter = cv2.arcLength(contour, True)
+        circularity = (4 * np.pi * area) / (perimeter ** 2) if perimeter > 0 else 0
+
+        if circularity > 0.75:
+            largest_contour = contour
+
+    if largest_contour is not None:
+        mask = np.zeros_like(image[:, :, 0])
+        cv2.drawContours(mask, [largest_contour], -1, 255, thickness=cv2.FILLED)
+
+        foreground = cv2.bitwise_and(image, image, mask=mask)
+        background = np.ones_like(image) * 255
+        mask_inv = cv2.bitwise_not(mask)
+
+        result = cv2.bitwise_or(foreground, cv2.bitwise_and(background, background, mask=mask_inv))
+        return result
+
+    return image
+
+
+# Function to enhance edges using Canny edge detection
+def enhance_edges(image):
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    edges = cv2.Canny(gray, 100, 200)
+    return edges
+
+
+# Updated feature extraction function using robust background removal
+def extract_features(image):
+    image_no_background = remove_background(image)
+    edges = enhance_edges(image_no_background)
+    outer_contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+    circularity = 0
+    red_pixel_density_perimeter = 0
+    digit_perimeter_ratio = 0
+    black_pixel_ratio = 0
+    area_of_black_pixels = 0
+
+    if outer_contours:
+        outer_contour = max(outer_contours, key=cv2.contourArea)
+        area = cv2.contourArea(outer_contour)
+        perimeter = cv2.arcLength(outer_contour, True)
+        if perimeter > 0:
+            circularity = (4 * np.pi * area) / (perimeter ** 2)
+
+        mask = np.zeros(image_no_background.shape[:2], dtype=np.uint8)
+        cv2.drawContours(mask, [outer_contour], -1, (255), thickness=cv2.FILLED)
+
+        red_pixels = cv2.inRange(image_no_background, (0, 0, 100), (80, 80, 255))
+        red_pixel_count = np.sum(red_pixels[mask > 0] > 0)
+        total_outer_pixels = np.sum(mask > 0)
+        red_pixel_density_perimeter = red_pixel_count / total_outer_pixels if total_outer_pixels > 0 else 0
+
+        black_pixels = cv2.inRange(image_no_background, (0, 0, 0), (80, 80, 80))
+        black_pixel_count = np.sum(black_pixels > 0)
+
+        total_area_count = np.sum(mask > 0)
+        area_of_black_pixels = black_pixel_count
+        black_pixel_ratio = area_of_black_pixels / total_area_count if total_area_count > 0 else 0
+
+        black_contours, _ = cv2.findContours(black_pixels, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        total_digit_perimeter = sum(cv2.arcLength(contour, True) for contour in black_contours)
+        digit_perimeter_ratio = total_digit_perimeter / perimeter if perimeter > 0 else 0
+
+    return np.array([red_pixel_density_perimeter, circularity, digit_perimeter_ratio, black_pixel_ratio,
+                     area_of_black_pixels])
+
+
+# Confusion matrix plot function
+def plot_confusion_matrix(y_true, y_pred, class_names):
+    cm = confusion_matrix(y_true, y_pred)
+    plt.figure(figsize=(8, 6))
+    sns.heatmap(cm, annot=True, fmt="d", cmap="Blues", xticklabels=class_names, yticklabels=class_names)
+    plt.xlabel('Predicted')
+    plt.ylabel('True')
+    plt.title('Confusion Matrix')
+    plt.show()
+
+
+# Plot learning curve function
+def plot_learning_curve(estimator, X, y, title="Learning Curve", cv=None):
+    plt.figure()
+    plt.title(title)
+    plt.xlabel("Training examples")
+    plt.ylabel("Score")
+
+    train_sizes, train_scores, test_scores = learning_curve(estimator, X, y, cv=cv, n_jobs=-1,
+                                                            train_sizes=np.linspace(0.1, 1.0, 5))
+
+    train_scores_mean = np.mean(train_scores, axis=1)
+    test_scores_mean = np.mean(test_scores, axis=1)
+
+    plt.grid()
+
+    plt.plot(train_sizes, train_scores_mean, 'o-', color="r", label="Training score")
+    plt.plot(train_sizes, test_scores_mean, 'o-', color="g", label="Cross-validation score")
+
+    plt.legend(loc="best")
+    plt.show()
+
+
+# Path to the image directories
+train_image_path = r"C:\Users\chadg\OneDrive\Desktop\SEM 7\Machine Learning and Perception\Project\Photo frames\a_training_set"
+test_image_path = r"C:\Users\chadg\OneDrive\Desktop\SEM 7\Machine Learning and Perception\Project\Photo frames\b_testing_set"
+
+data = []
+target = []
+
+# Load training images and extract features
+for file_name in os.listdir(train_image_path):
+    image_path_full = os.path.join(train_image_path, file_name)
+    image = cv2.imread(image_path_full)
+
+    if image is not None:
+        label = file_name.split('_')[0]
+        features = extract_features(image)
+        data.append(features)
+        target.append(label)
+
+# Ensure data isn't empty
+if data and target:
+    data = np.array(data)
+    target = np.array(target)
+
+    iso_forest = IsolationForest(contamination=0.1)
+    outliers = iso_forest.fit_predict(data)
+
+    data = data[outliers == 1]
+    target = target[outliers == 1]
+
+    X_train, X_test, y_train, y_test = train_test_split(data, target, test_size=0.2, random_state=42)
+
+    classifier = RandomForestClassifier(n_estimators=100, random_state=42)
+    classifier.fit(X_train, y_train)
+
+    # Confusion Matrix
+    y_pred = classifier.predict(X_test)
+    class_names = np.unique(target)  # Get unique class names
+    plot_confusion_matrix(y_test, y_pred, class_names)
+
+    # Learning Curve
+    plot_learning_curve(classifier, X_train, y_train)
+
+    model_filename = 'speed_sign_classifier_2.joblib'
+    dump(classifier, model_filename)
+    print(f"Model saved as {model_filename}")
+else:
+    print("Error: No images found for processing in the training set.")
+
+from sklearn.metrics import classification_report
+
+# After training and predicting on the test set
+y_train_pred = classifier.predict(X_train)  # Predictions on the training set
+y_test_pred = classifier.predict(X_test)  # Predictions on the test set
+
+# Get class names from the target labels
+class_names = np.unique(target)  # Get unique class names
+
+# Confusion Matrix for the test set
+print("Confusion Matrix for Test Set:")
+plot_confusion_matrix(y_test, y_test_pred, class_names)
+
+# Classification Report for Test Set
+print("Classification Report for Test Set:")
+print(classification_report(y_test, y_test_pred, target_names=class_names))
+
+# Classification Report for Training Set (to check for overfitting)
+print("\nClassification Report for Training Set:")
+print(classification_report(y_train, y_train_pred, target_names=class_names))
